@@ -199,8 +199,11 @@ hip_compat.h
 
 # Benchmark dataset
 benchmarks/**/*.txt
-benchmarks/**/*.json
 benchmarks/**/*.jsonl
+benchmarks/language_modelling/LongBench/results/*
+benchmarks/FlexiCache/Throughput/Results/*
+benchmarks/FlexiCache/Throughput/plots/*
+benchmarks/FlexiCache/Language_Modelling/LongBench/results/*
 
 # Linting
 actionlint
@@ -213,5 +216,3 @@ large_files/
 
 TopK-Analysis/Data
 TopK-Analysis/Data-Sorted
-
-benchmarks/language_modelling/L-Eval/LEval/

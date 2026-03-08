@@ -1,0 +1,12 @@
+transformers==4.50.0
+datasets<4
+huggingface_hub<1
+fastchat
+accelerate
+nltk
+rouge_score
+evaluate
+jieba
+fuzzywuzzy
+bert-score
+rouge

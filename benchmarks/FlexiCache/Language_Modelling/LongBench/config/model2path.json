@@ -1,0 +1,9 @@
+{
+    "Mistral-Small-24B-Instruct-2501": "mistralai/Mistral-Small-24B-Instruct-2501",
+    "Meta-Llama-3.1-8B-Instruct": "meta-llama/Llama-3.1-8B-Instruct",
+    "Meta-Llama-3.3-70B-Instruct": "meta-llama/Llama-3.3-70B-Instruct",
+    "Mistral-7B-Instruct-v0.2": "mistralai/Mistral-7B-Instruct-v0.2",
+    "Mixtral-8x7B-Instruct-v0.1": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+    "longchat-v1.5-7b-32k": "lmsys/longchat-7b-v1.5-32k",
+    "Qwen2.5-32B-Instruct": "Qwen/Qwen2.5-32B-Instruct"
+}
