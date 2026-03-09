@@ -174,6 +174,11 @@ _NB: FlexiCache loads custom CUDA kernels via torch.utils.cpp_extension.load. Li
 - **unstable_heads_profile_task**: selects the precomputed head classification profile
 - **enable-flexicache** enables FlexiCache
 
+## Benchmarking
+
+Detailed benchmarking instructions are available in the
+[benchmarking guide](FlexiCache/README.md).
+
 ## Supported Models
 
 FlexiCache currently includes stability profiling and head classification metadata for the following models:

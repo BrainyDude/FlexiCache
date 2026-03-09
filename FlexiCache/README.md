@@ -74,7 +74,7 @@ For reliable throughput measurements, the machine should be idle with no other w
 | Code licenses (if publicly available)?                           | Apache License 2.0                                                                                                                                                                       |
 | Data licenses (if publicly available)?                           | MIT                                                                                                                                                                                      |
 | Workflow framework used?                                         | Bash scripts and Python evaluation code                                                                                                                                                  |
-| Archived (provide DOI)?                                          | https://doi.org/10.5281/zenodo.18910205                                                                                                                                                  |
+| Archived (provide DOI)?                                          | https://doi.org/10.5281/zenodo.18918856                                                                                                                                                  |
 
 ---
 
