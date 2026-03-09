@@ -674,42 +674,81 @@ def chunked_prefill_paged_decode(
             layer_has_unstable_heads = FCC.LAYER_HAS_UNSTABLE_HEADS[layer_number]
             
             if layer_has_unstable_heads or any_first_decode or any_needs_rerank:
-                kernel_compute_block_scores_minmax[grid](
-                    # outputs / inputs
-                    block_scores_layer,                          # [B, KV, MAX_BLK] (bf16)
-                    query,                                       # [num_tokens, num_q_heads, H]
-                    minmax_key_cache[layer_number],              # [NUM_MM_BLKS, MM_BLOCK_SIZE, 2, H]
-                    minmax_block_table,                          # [B_tot, KV, MAX_MM_BLKS]
-                    seq_lens,                                    # [B]
-                    unstable_head_mask,           # [1]
-                    num_decode_step,
-                    rank_frequency,
+                if num_queries_per_kv % 2 == 0:
+                    kernel_compute_block_scores_minmax[grid](
+                        # outputs / inputs
+                        block_scores_layer,                          # [B, KV, MAX_BLK] (bf16)
+                        query,                                       # [num_tokens, num_q_heads, H]
+                        minmax_key_cache[layer_number],              # [NUM_MM_BLKS, MM_BLOCK_SIZE, 2, H]
+                        minmax_block_table,                          # [B_tot, KV, MAX_MM_BLKS]
+                        seq_lens,                                    # [B]
+                        unstable_head_mask,           # [1]
+                        num_decode_step,
+                        rank_frequency,
 
-                    # strides
-                    block_scores_layer.stride(0),                # stride_bs_batch
-                    block_scores_layer.stride(1),                # stride_bs_head
-                    query.stride(0),                             # q_stride_0
-                    query.stride(1),                             # q_stride_1
-                    minmax_key_cache.stride(1),                  # stride_mmkc_bl
-                    minmax_key_cache.stride(2),                  # stride_mmkc_bs
-                    minmax_key_cache.stride(3),                  # stride_mmkc_two
-                    minmax_key_cache.stride(4),                  # stride_mmkc_hs
-                    minmax_block_table.stride(0),                # stride_mmb_bs
-                    minmax_block_table.stride(1),                # stride_mmb_kh
-                    minmax_block_table.stride(2),                # stride_mmb_bl
+                        # strides
+                        block_scores_layer.stride(0),                # stride_bs_batch
+                        block_scores_layer.stride(1),                # stride_bs_head
+                        query.stride(0),                             # q_stride_0
+                        query.stride(1),                             # q_stride_1
+                        minmax_key_cache.stride(1),                  # stride_mmkc_bl
+                        minmax_key_cache.stride(2),                  # stride_mmkc_bs
+                        minmax_key_cache.stride(3),                  # stride_mmkc_two
+                        minmax_key_cache.stride(4),                  # stride_mmkc_hs
+                        minmax_block_table.stride(0),                # stride_mmb_bs
+                        minmax_block_table.stride(1),                # stride_mmb_kh
+                        minmax_block_table.stride(2),                # stride_mmb_bl
 
-                    # decode-phase gate
-                    filter_by_query_len=True,
-                    query_start_len_ptr=query_start_loc,
+                        # decode-phase gate
+                        filter_by_query_len=True,
+                        query_start_len_ptr=query_start_loc,
 
-                    # meta
-                    queries_per_kv=num_queries_per_kv,
-                    BLOCK_SIZE=block_size,
-                    HEAD_SIZE=head_size,
-                    HEAD_SIZE_PAD=triton.next_power_of_2(head_size),
-                    MINMAX_CACHE_BLOCK_SIZE=FCC.MINMAX_KEY_CACHE_BLOCK_SIZE,
-                    PAGES_PER_TB=PAGES_PER_TB,
-                )
+                        # meta
+                        queries_per_kv=num_queries_per_kv,
+                        BLOCK_SIZE=block_size,
+                        HEAD_SIZE=head_size,
+                        HEAD_SIZE_PAD=triton.next_power_of_2(head_size),
+                        MINMAX_CACHE_BLOCK_SIZE=FCC.MINMAX_KEY_CACHE_BLOCK_SIZE,
+                        PAGES_PER_TB=PAGES_PER_TB,
+                    )
+                else:
+                    kernel_compute_block_scores_minmax_qwen32[grid](
+                        # outputs / inputs
+                        block_scores_layer,                          # [B, KV, MAX_BLK] (bf16)
+                        query,                                       # [num_tokens, num_q_heads, H]
+                        minmax_key_cache[layer_number],              # [NUM_MM_BLKS, MM_BLOCK_SIZE, 2, H]
+                        minmax_block_table,                          # [B_tot, KV, MAX_MM_BLKS]
+                        seq_lens,                                    # [B]
+                        unstable_head_mask,                          # [1]
+                        num_decode_step,
+                        rank_frequency,
+
+                        # strides
+                        block_scores_layer.stride(0),                # stride_bs_batch
+                        block_scores_layer.stride(1),                # stride_bs_head
+                        query.stride(0),                             # q_stride_0
+                        query.stride(1),                             # q_stride_1
+                        minmax_key_cache.stride(1),                  # stride_mmkc_bl
+                        minmax_key_cache.stride(2),                  # stride_mmkc_bs
+                        minmax_key_cache.stride(3),                  # stride_mmkc_two
+                        minmax_key_cache.stride(4),                  # stride_mmkc_hs
+                        minmax_block_table.stride(0),                # stride_mmb_bs
+                        minmax_block_table.stride(1),                # stride_mmb_kh
+                        minmax_block_table.stride(2),                # stride_mmb_bl
+
+                        # decode-phase gate
+                        filter_by_query_len=True,
+                        query_start_len_ptr=query_start_loc,
+
+                        # meta
+                        queries_per_kv=num_queries_per_kv,
+                        queries_per_kv_padded=num_queries_per_kv_padded,
+                        BLOCK_SIZE=block_size,
+                        HEAD_SIZE=head_size,
+                        HEAD_SIZE_PAD=triton.next_power_of_2(head_size),
+                        MINMAX_CACHE_BLOCK_SIZE=FCC.MINMAX_KEY_CACHE_BLOCK_SIZE,
+                        PAGES_PER_TB=PAGES_PER_TB,
+                    )
 
             write_top_k_blocks(
                 layer_number, num_seqs, block_scores, max_seq_len,

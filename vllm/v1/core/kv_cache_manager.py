@@ -309,7 +309,7 @@ class KVCacheManager:
                             ("Cannot allocate REQ %s with status %s: Need %d CPU blocks but only %d free. "),
                             request.request_id, request.status, num_new_blocks, min_free_cpu_blocks
                         )
-                    assert False, "DEBUG: Should I allocated larger CPU KV cache?"
+                    # assert False, "DEBUG: Should I allocated larger CPU KV cache?"
                     return None, None, None
 
                 num_new_blocks_w_prealloc = min(
@@ -339,7 +339,7 @@ class KVCacheManager:
                             ("Cannot allocate REQ %s with status %s: Need %d MinMax blocks but only %d free. "),
                             request.request_id, request.status, num_new_mm_blocks, self._min_free_minmax_across_layers()
                         )
-                    assert False, "DEBUG: Should I allocated larger MinMax KV cache?"
+                    # assert False, "DEBUG: Should I allocated larger MinMax KV cache?"
                     return None, None, None
             else:
                 num_new_blocks_w_prealloc = 0

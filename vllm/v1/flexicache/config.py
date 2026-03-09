@@ -183,6 +183,11 @@ class FlexiCacheConfig(metaclass=_FlexiMeta):
         if is_gpu:
             required = self.min_blocks_per_gpu_layer * self.num_layers
             if total_blocks < required:
+                # Retry with a more conservative requirement
+                self.min_blocks_per_gpu_layer = \
+                    int(math.ceil(self.max_model_len / self.block_size) * self.num_kv_heads)
+                required = self.min_blocks_per_gpu_layer * self.num_layers
+            if total_blocks < required:
                 raise ValueError(
                     f"Not enough GPU blocks to satisfy per-layer minimum: {total_blocks} < {required}"
                 )

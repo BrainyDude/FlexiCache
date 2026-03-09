@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 # Usage:
-#   bash Mistral24b.sh
-#   bash Mistral24b.sh 100 500 1000
+#   bash Qwen32b.sh
+#   bash Qwen32b.sh 100 500 1000
 # If no output lengths are provided, uses the default hardcoded list.
 # If one or more output lengths are provided, runs only for those lengths.
 
@@ -22,7 +22,7 @@ else
   OUTPUT_LENS=("$@")
 fi
 
-model="mistralai/Mistral-Small-24B-Instruct-2501"
+model="Qwen/Qwen2.5-32B-Instruct"
 
 ENABLE_FLEXICACHE_LIST=(false true)
 TOPK_LIST=(0 64)
@@ -32,6 +32,8 @@ TOPK_LIST=(0 64)
 ratio_in=0.3333
 ratio_out=1
 
+# Ideally, should generate prompt dataset with Qwen32B instead. But this should not affect relative throughput
+# performance trends significantly as long as the same dataset is used for both baseline and FlexiCache runs.
 dataset_path="Prompts/prompts-Mistral-7B-Instruct-v0.2.json"
 
 OUT_DIR="Results"
@@ -70,7 +72,7 @@ for OUTPUT_LEN in "${OUTPUT_LENS[@]}"; do
       CMD+=(
         --rerank-frequency 16 \
         --topK-budget "$TOP_K" \
-        --num-unstable-heads 80 \
+        --num-unstable-heads 128 \
         --unstable_heads_profile_task gov_report \
         --enable-flexicache
       )

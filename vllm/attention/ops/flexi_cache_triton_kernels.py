@@ -945,6 +945,142 @@ def kernel_compute_block_scores_minmax(
 
             tl.store(out_ptr, score_agg)
 
+@triton.jit
+def kernel_compute_block_scores_minmax_qwen32(
+    # --- outputs / inputs ---
+    block_scores_ptr,                    # [B, KV, MAX_BLK] (bf16/fp16 dst)
+    query_ptr,                           # [num_tokens, num_q_heads, H]
+    minmax_kv_cache_ptr,                 # [NUM_MM_BLKS, MM_BLOCK_SIZE, 2, H]
+    minmax_block_table_ptr,              # [B, KV, MAX_MM_BLKS] (int32)
+    seq_lens_ptr,                        # [B] (int32)
+    unstable_mask_gpu,                   # [1]
+    num_decode_steps,                    # [B]
+    rank_frequency: tl.constexpr,                      # int32
+
+    # --- strides / layout (all in elements) ---
+    stride_bs_batch, stride_bs_head,     # for block_scores
+    q_stride_0, q_stride_1,              # for query
+    stride_mmkc_bl, stride_mmkc_bs,      # for minmax cache
+    stride_mmkc_two, stride_mmkc_hs,
+    stride_mmb_bs, stride_mmb_kh, stride_mmb_bl,  # for minmax block-table
+
+    # --- decode gating (optional) ---
+    filter_by_query_len: tl.constexpr,
+    query_start_len_ptr,                 # [B+1]
+
+    # --- meta ---
+    queries_per_kv : tl.constexpr,
+    queries_per_kv_padded : tl.constexpr,
+    BLOCK_SIZE : tl.constexpr,
+    HEAD_SIZE : tl.constexpr,
+    HEAD_SIZE_PAD : tl.constexpr,
+    MINMAX_CACHE_BLOCK_SIZE: tl.constexpr,
+    PAGES_PER_TB : tl.constexpr,         # set to 16
+):
+    # constants
+    FP32_MAX = 3.402823e38
+
+    # program ids
+    b  = tl.program_id(0)
+    kh = tl.program_id(1)
+    bz = tl.program_id(2)  # tiles pages
+
+    num_decode_step = tl.load(num_decode_steps + b).to(tl.int32)
+    if num_decode_step <= 0: # not in decode phase
+        return
+    
+    unstable_mask    = tl.load(unstable_mask_gpu).to(tl.uint32)
+    is_unstable_head = (((unstable_mask >> kh) & 1) != 0).to(tl.int1)
+    is_rerank_step   = ((num_decode_step == 1) | ((num_decode_step % rank_frequency) == 0)).to(tl.int1)
+    do_rank          = (is_unstable_head | is_rerank_step).to(tl.int1)
+    if do_rank == 0:
+        return
+
+    if filter_by_query_len:
+        q_start = tl.load(query_start_len_ptr + b)
+        q_end   = tl.load(query_start_len_ptr + b + 1)
+        # Only run when a single new token is being decoded
+        if (q_end - q_start) > 1:
+            return
+    else:
+        q_start = b
+
+    # sequence/page math
+    seq_len  = tl.load(seq_lens_ptr + b)
+    num_blk  = (seq_len + BLOCK_SIZE - 1) // BLOCK_SIZE
+    last_blk = num_blk - 1
+
+    # base page index for this TB
+    blk_base = bz * PAGES_PER_TB
+
+    # ---- load queries once per TB ----
+    lanes = tl.arange(0, queries_per_kv_padded)
+    qh    = kh * queries_per_kv + lanes
+    qh_mask = lanes < queries_per_kv
+
+    dim_mask = tl.arange(0, HEAD_SIZE_PAD) < HEAD_SIZE
+    q_ptrs = (
+        q_start * q_stride_0
+        + qh[:, None] * q_stride_1
+        + tl.arange(0, HEAD_SIZE_PAD)[None, :]
+    )
+    Q = tl.load(
+        query_ptr + q_ptrs,
+        mask=qh_mask[:, None] & dim_mask[None, :],
+        other=0.0
+    ).to(tl.float32)  # [Q_kv, H_pad]
+
+    # precompute base offset for block_scores pointer (int64)
+    bs_off_base = (b * stride_bs_batch + kh * stride_bs_head).to(tl.int64)
+
+    # ---- process PAGES_PER_TB pages ----
+    for p in tl.static_range(PAGES_PER_TB):
+        blk = blk_base + p
+        in_range    = blk < num_blk
+        is_sentinel = blk == last_blk
+        do_compute  = in_range & (~is_sentinel)
+
+        out_ptr = block_scores_ptr + (bs_off_base + blk.to(tl.int64))
+
+        # sentinel write
+        if is_sentinel:
+            tl.store(out_ptr, FP32_MAX)
+
+        # out-of-range: nothing to do
+        if do_compute:
+            # map logical page -> (mm_block, slot)
+            mm_idx  = blk // MINMAX_CACHE_BLOCK_SIZE
+            mm_slot = blk %  MINMAX_CACHE_BLOCK_SIZE
+
+            mmb_ptr = (
+                minmax_block_table_ptr
+                + b * stride_mmb_bs
+                + kh * stride_mmb_kh
+                + mm_idx * stride_mmb_bl
+            )
+            mm_phys = tl.load(mmb_ptr).to(tl.int64)
+
+            offs_d = tl.arange(0, HEAD_SIZE_PAD)
+
+            base = (
+                minmax_kv_cache_ptr
+                + mm_phys * stride_mmkc_bl
+                + mm_slot * stride_mmkc_bs
+            )
+            min_ptr = base + 0 * stride_mmkc_two + offs_d * stride_mmkc_hs
+            max_ptr = base + 1 * stride_mmkc_two + offs_d * stride_mmkc_hs
+
+            rep_min = tl.load(min_ptr, mask=dim_mask, other=0.0).to(tl.float32)
+            rep_max = tl.load(max_ptr, mask=dim_mask, other=0.0).to(tl.float32)
+
+            # upper-bound across queries
+            upper = tl.maximum(Q * rep_max[None, :], Q * rep_min[None, :])  # [Q_kv, H_pad]
+            score = tl.sum(upper, axis=1)                                   # [Q_kv]
+            score = tl.where(qh_mask, score, -float("inf"))
+            score_agg = tl.max(score, axis=0)                               # scalar
+
+            tl.store(out_ptr, score_agg)
+
 @torch.inference_mode()
 def write_top_k_blocks(
     layer_idx:       int,
